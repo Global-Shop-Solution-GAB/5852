@@ -1,0 +1,138 @@
+﻿Program.Sub.ScreenSU.Start
+Gui.F_SetDays..Create(BaseForm)
+Gui.F_SetDays..Caption("Quote Expiration Maintenance")
+Gui.F_SetDays..Size(4995,2025)
+Gui.F_SetDays..MinX(0)
+Gui.F_SetDays..MinY(0)
+Gui.F_SetDays..Position(0,0)
+Gui.F_SetDays..AlwaysOnTop(False)
+Gui.F_SetDays..FontName("Tahoma")
+Gui.F_SetDays..FontSize(8.25)
+Gui.F_SetDays..ControlBox(True)
+Gui.F_SetDays..MaxButton(True)
+Gui.F_SetDays..MinButton(True)
+Gui.F_SetDays..MousePointer(0)
+Gui.F_SetDays..Moveable(True)
+Gui.F_SetDays..Sizeable(True)
+Gui.F_SetDays..ShowInTaskBar(True)
+Gui.F_SetDays..TitleBar(True)
+Gui.F_SetDays..Event(UnLoad,F_SetDays_UnLoad)
+Gui.F_SetDays.lblSetDays.Create(Label,"How many days until a quote expires?",True,4650,285,0,180,165,True,0,"Tahoma",12,,0,0)
+Gui.F_SetDays.lblSetDays.BorderStyle(0)
+Gui.F_SetDays.lblSetDays.FontStyle(True,False,False,False,False)
+Gui.F_SetDays.txtSetDays.Create(TextBox,"",True,1500,390,0,1770,525,True,0,"Tahoma",12,,1)
+Gui.F_SetDays.txtSetDays.NumericOnly(2)
+Gui.F_SetDays.txtSetDays.FontStyle(True,False,False,False,False)
+Gui.F_SetDays.cmdSetDays.Create(Button)
+Gui.F_SetDays.cmdSetDays.Enabled(True)
+Gui.F_SetDays.cmdSetDays.Visible(True)
+Gui.F_SetDays.cmdSetDays.Zorder(0)
+Gui.F_SetDays.cmdSetDays.Size(1125,345)
+Gui.F_SetDays.cmdSetDays.Position(1950,975)
+Gui.F_SetDays.cmdSetDays.Caption("Save")
+Gui.F_SetDays.cmdSetDays.FontName("Tahoma")
+Gui.F_SetDays.cmdSetDays.FontSize(12)
+Gui.F_SetDays.cmdSetDays.FontStyle(True,False,False,False,False)
+Gui.F_SetDays.cmdSetDays.Event(Click,cmdSetDays_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.Try
+'TJS February 2020
+'Customer: Hennig, Inc.
+'This program will set the WON_LOSS date to the current date
+'and USER_5 to "EXPIRED" and WON_LOSS to "C" In the Quote Lines
+'for all Quotes with a creation date over 100 days.
+'Should be set to run daily from a task.
+
+'TJS, February 2023
+'Modified on VT for V-TEK.
+'Changed to add maintenance program where the customer can select the number of days before a quote expires.
+V.Local.sSQL.Declare
+V.Local.sToday.Declare
+V.Local.sExpDate.Declare
+V.Local.iExpDays.Declare
+
+'Setting GS Registry return default to 100 days so that Hennig does not specifically need to change anything if they don't want to.
+F.Global.Registry.ReadValue(-1,V.Caller.CompanyCode,"5852_Quote_Expiration",5852,1000,1,100,V.Local.iExpDays)
+
+F.Intrinsic.Control.If(V.Caller.Switches,=,"M")
+
+	Gui.F_SetDays.txtSetDays.Text(V.Local.iExpDays)
+
+	Gui.F_SetDays..Show
+F.Intrinsic.Control.Else
+	F.Intrinsic.Math.Mult(V.Local.iExpDays,-1,V.Local.iExpDays)
+
+	V.Local.sExpDate.Set(V.Ambient.Now)
+	F.Intrinsic.Date.DateAdd(D,V.Local.iExpDays,V.Local.sExpDate,V.Local.sExpDate)
+	F.Intrinsic.String.Format(V.Local.sExpDate,"YYYYMMDD",V.Local.sExpDate)
+	
+	V.Local.sToday.Set(V.Ambient.Now)
+	F.Intrinsic.String.Format(V.Local.sToday,"YYYYMMDD",V.Local.sToday)
+	
+	F.Intrinsic.UI.InvokeWaitDialog("Updating Expired Quotes","Please wait")
+	Function.Intrinsic.UI.SetWaitDialogAlwaysOnTop(True)
+	
+	F.ODBC.Connection!conts.OpenCompanyConnection
+	
+	F.Intrinsic.String.Build("Select * from QUOTE_HEADER where RECORD_NO = '  A' and RTRIM(QUOTE_WON_LOSS_DATE) = '00000000' and QTE_CREATED_DATE <= '{0}'",V.Local.sExpDate,V.Local.sSQL)
+	F.Data.DataTable.CreateFromSQL("dtQHead","conts",V.Local.sSQL,True)
+	
+	F.Data.DataTable.SetValue("dtQHead",-1,"QUOTE_WON_LOSS_DATE",V.Local.sToday)
+	
+	F.Intrinsic.String.Build("Select * from QUOTE_LINES where RECORD_TYPE = 'L' and RTRIM(QUOTE_WON) = '' and DATE_QUOTE <= '{0}'",V.Local.sExpDate,V.Local.sSQL)
+	
+	F.Data.DataTable.CreateFromSQL("dtQlines","conts",V.Local.sSQL,True)
+	
+	F.Data.DataTable.SetValue("dtQlines",-1,"QUOTE_WON","C","USER_5","EXPIRED")
+	
+	F.Data.DataTable.SaveToDB("dtQHead","conts","QUOTE_HEADER","QUOTE_NO*!*RECORD_NO",256)
+	
+	F.Data.DataTable.SaveToDB("dtQlines","conts","QUOTE_LINES","QUOTE_NO*!*RECORD_NO",256)
+	
+	F.ODBC.Connection!conts.Close
+	
+	F.Intrinsic.UI.CloseWaitDialog
+	
+	F.Intrinsic.Control.End
+
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(Error,"SubRoutine",V.Ambient.CurrentSubroutine,"eNumber",V.Ambient.ErrorNumber,"eDescription",V.Ambient.ErrorDescription)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.cmdSetDays_Click.Start
+V.Local.iExpDays.Declare
+
+V.Local.iExpDays.Set(V.Screen.F_SetDays!txtSetDays.Text)
+
+F.Global.Registry.AddValue(-1,V.Caller.CompanyCode,"5852_Quote_Expiration",5852,1000,False,"",False,V.Local.iExpDays.Long,-999.0,1/1/1980,12:00:00 AM)
+
+F.Intrinsic.Control.End
+
+Program.Sub.cmdSetDays_Click.End
+
+Program.Sub.F_SetDays_UnLoad.Start
+F.Intrinsic.Control.End
+Program.Sub.F_SetDays_UnLoad.End
+
+Program.Sub.Error.Start
+V.Local.sError.Declare
+V.Local.iRet.Declare
+V.Local.sSep.Declare
+
+F.Intrinsic.String.Build("-------------------------------------------------------------------------------------",,V.Local.sSep)
+F.Intrinsic.String.Build("({5}-{6}){0}{7}{0}Project: {4}{0}{7}{0}Sub: {1}{0}Error: {2}, {3}", V.Ambient.NewLine, V.Args.SubRoutine, V.Args.eNumber, V.Args.eDescription,V.Caller.ScriptFile,V.Ambient.Date, V.Ambient.Time,V.Local.sSep,V.Local.sError)
+F.Intrinsic.UI.Msgbox(V.Local.sError,"Error",V.Local.iRet)
+Program.Sub.Error.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$tsmith$}$20230227105559412$}$xqPbj9atw05FglvzeFsZ9cqXP+qvG6tXk0CqZTATtJaU4tFDfnQ5uh3ajmvVb3DSPbEzePoEsYc=
+Program.Sub.Comments.End
